@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using TodoApi.Auth;
 using TodoApi.Database;
@@ -15,38 +16,52 @@ public class AuthController : ControllerBase
     private readonly JWTGenerator _jWTGenerator;
     private readonly DBContext _context;
     private readonly ILogger<AuthController> _logger;
+    private readonly IConfiguration _configuration;
 
-    public AuthController(DBContext context, ILogger<AuthController> logger)
+    public AuthController(DBContext context, ILogger<AuthController> logger, IConfiguration configuration)
     {
-        _jWTGenerator = new JWTGenerator("Secret");
+        _jWTGenerator = new JWTGenerator(configuration["JwtSettings:Key"] ?? "superSecretKey@345");
         _context = context;
         _logger = logger;
+        _configuration = configuration;
     }
 
     [HttpPost("login")]
-    public IActionResult Login([FromBody] LoginRequest request)
+    public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        if (request.Email == "admin" && request.Password == "admin")
+        try
         {
-            var token = _jWTGenerator.GenerateToken("1", "admin");
+            // Check if user exists
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+
+            if (user == null)
+            {
+                return Unauthorized();
+            }
+
+            // Check if password is correct
+            if (!Helpers.VerifyPassword(request.Password!, user.Password!))
+            {
+                return Unauthorized();
+            }
+
+            // Generate token
+            var token = _jWTGenerator.GenerateToken(user.Id.ToString(), user.Name!);
+
             return Ok(new LoginResponse { Token = token });
         }
-        else
+        catch (Exception e)
         {
-            return Unauthorized();
+            _logger.LogError("message: {exception}", e.Message);
+            return StatusCode(StatusCodes.Status500InternalServerError);
         }
     }
 
     [HttpPost("register")]
-    public async Task<IActionResult> Register(RegisterRequest request)
+    public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
         try
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
             string hashedPassword = Helpers.HashPassword(request.Password!);
 
             _context.Users.Add(new User
@@ -62,14 +77,18 @@ public class AuthController : ControllerBase
         }
         catch (Exception)
         {
-            throw new Exception("Error registering user");
+            return StatusCode(StatusCodes.Status500InternalServerError);
         }
     }
 }
 
 public class LoginRequest
 {
+    [Required]
+    [EmailAddress]
     public string? Email { get; set; }
+
+    [Required]
     public string? Password { get; set; }
 }
 
