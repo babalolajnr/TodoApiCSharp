@@ -1,4 +1,6 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using TodoApi.Auth;
 using TodoApi.Database;
 using TodoApi.Models;
@@ -6,23 +8,25 @@ using TodoApi.Models;
 namespace TodoApi.Controllers;
 
 [ApiController]
-[Route("[controller]")]
-[ValidateAntiForgeryToken]
+[Route("api/[controller]")]
+// [ValidateAntiForgeryToken]
 public class AuthController : ControllerBase
 {
     private readonly JWTGenerator _jWTGenerator;
     private readonly DBContext _context;
+    private readonly ILogger<AuthController> _logger;
 
-    public AuthController(DBContext context)
+    public AuthController(DBContext context, ILogger<AuthController> logger)
     {
         _jWTGenerator = new JWTGenerator("Secret");
         _context = context;
+        _logger = logger;
     }
 
     [HttpPost("login")]
     public IActionResult Login([FromBody] LoginRequest request)
     {
-        if (request.Username == "admin" && request.Password == "admin")
+        if (request.Email == "admin" && request.Password == "admin")
         {
             var token = _jWTGenerator.GenerateToken("1", "admin");
             return Ok(new LoginResponse { Token = token });
@@ -33,37 +37,39 @@ public class AuthController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Register a user.
-    /// </summary>
-    /// <param name="user"></param>
-    /// <returns></returns>
     [HttpPost("register")]
-    // [SwaggerOperation(Summary = "Get all items", Description = "Get a list of all items.")]
-    // [SwaggerResponse(200, "Success", typeof(IEnumerable<Item>))]
-    public IActionResult Register([FromBody] User user)
+    public async Task<IActionResult> Register(RegisterRequest request)
     {
-        if (!ModelState.IsValid)
+        try
         {
-            return BadRequest(ModelState);
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            string hashedPassword = Helpers.HashPassword(request.Password!);
+
+            _context.Users.Add(new User
+            {
+                Name = request.Name,
+                Password = hashedPassword,
+                Email = request.Email
+            });
+
+            await _context.SaveChangesAsync();
+
+            return CreatedAtAction(nameof(Register), new { email = request.Email }, request);
         }
-
-        string hashedPassword = Helpers.HashPassword(user.Password!);
-
-        var result = _context.Users.Add(new User
+        catch (Exception)
         {
-            Username = user.Username,
-            Password = hashedPassword,
-            Email = user.Email
-        });
-
-        return Ok(result.Entity);
+            throw new Exception("Error registering user");
+        }
     }
 }
 
 public class LoginRequest
 {
-    public string? Username { get; set; }
+    public string? Email { get; set; }
     public string? Password { get; set; }
 }
 
@@ -74,7 +80,15 @@ public class LoginResponse
 
 public class RegisterRequest
 {
-    public string? Username { get; set; }
+    [Required]
+    [MaxLength(50)]
+    public string? Name { get; set; }
+
+    [Required]
+    [MinLength(8)]
     public string? Password { get; set; }
+
+    [Required]
+    [EmailAddress]
     public string? Email { get; set; }
 }
