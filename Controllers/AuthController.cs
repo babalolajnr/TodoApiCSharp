@@ -18,9 +18,9 @@ public class AuthController : ControllerBase
     private readonly ILogger<AuthController> _logger;
     private readonly IConfiguration _configuration;
 
-    public AuthController(DBContext context, ILogger<AuthController> logger, IConfiguration configuration)
+    public AuthController(DBContext context, ILogger<AuthController> logger, IConfiguration configuration, JWTGenerator jWTGenerator)
     {
-        _jWTGenerator = new JWTGenerator(configuration["JwtSettings:Key"] ?? "superSecretKey@345");
+        _jWTGenerator = jWTGenerator;
         _context = context;
         _logger = logger;
         _configuration = configuration;

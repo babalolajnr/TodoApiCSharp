@@ -8,10 +8,12 @@ namespace TodoApi.Auth;
 public class JWTGenerator
 {
     private readonly string _key;
+    private readonly IConfiguration _config;
 
-    public JWTGenerator(string key)
+    public JWTGenerator(IConfiguration config)
     {
-        _key = key;
+        _key = config["JwtSettings:Key"] ?? "superSecretKey@345";
+        _config = config;
     }
 
     public string GenerateToken(string userId, string username, int expirationMinutes = 60)
@@ -28,8 +30,8 @@ public class JWTGenerator
         };
 
         var token = new JwtSecurityToken(
-            issuer: "YourIssuer",
-            audience: "YourAudience",
+            issuer: _config["JwtSettings:Issuer"] ?? "http://localhost:5000",
+            audience: _config["JwtSettings:Audience"] ?? "http://localhost:5000",
             claims: claims,
             expires: DateTime.UtcNow.AddMinutes(expirationMinutes),
             signingCredentials: credentials
