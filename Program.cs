@@ -1,6 +1,8 @@
+using System.Net;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using TodoApi.Auth;
 using TodoApi.Database;
 using TodoApi.Models;
 
@@ -17,6 +19,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddMvc();
 builder.Services.AddLogging();
+builder.Services.AddScoped<JWTGenerator>();
 
 var config = builder.Configuration;
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
@@ -35,6 +38,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+// Custom middleware to return JSON instead of only status code
+app.Use(async (context, next) =>
+{
+    await next();
+    if (context.Response.StatusCode == (int)HttpStatusCode.Unauthorized)
+    {
+        await context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
+    }
+});
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
