@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using TodoApi.Auth;
 using TodoApi.Database;
-using TodoApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +19,8 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddMvc();
 builder.Services.AddLogging();
 builder.Services.AddScoped<JWTGenerator>();
+builder.Services.AddScoped<TodoApi.Services.IAuthService, TodoApi.Services.Implementation.AuthService>();
+
 
 var config = builder.Configuration;
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>

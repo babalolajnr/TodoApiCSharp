@@ -1,29 +1,20 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-using TodoApi.Auth;
-using TodoApi.Database;
-using TodoApi.Models;
+using TodoApi.Services;
 
 namespace TodoApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-// [ValidateAntiForgeryToken]
 public class AuthController : ControllerBase
 {
-    private readonly JWTGenerator _jWTGenerator;
-    private readonly DBContext _context;
+    private readonly IAuthService _authService;
     private readonly ILogger<AuthController> _logger;
-    private readonly IConfiguration _configuration;
 
-    public AuthController(DBContext context, ILogger<AuthController> logger, IConfiguration configuration, JWTGenerator jWTGenerator)
+    public AuthController(IAuthService authService, ILogger<AuthController> logger)
     {
-        _jWTGenerator = jWTGenerator;
-        _context = context;
+        _authService = authService;
         _logger = logger;
-        _configuration = configuration;
     }
 
     [HttpPost("login")]
@@ -31,24 +22,14 @@ public class AuthController : ControllerBase
     {
         try
         {
-            // Check if user exists
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
+            var result = await _authService.Login(request);
 
-            if (user == null)
+            if (result == null)
             {
                 return Unauthorized();
             }
 
-            // Check if password is correct
-            if (!Helpers.VerifyPassword(request.Password!, user.Password!))
-            {
-                return Unauthorized();
-            }
-
-            // Generate token
-            var token = _jWTGenerator.GenerateToken(user.Id.ToString(), user.Name!);
-
-            return Ok(new LoginResponse { Token = token });
+            return Ok(new LoginResponse { Token = result.Value.Token, RefreshToken = result.Value.RefreshToken });
         }
         catch (Exception e)
         {
@@ -62,23 +43,37 @@ public class AuthController : ControllerBase
     {
         try
         {
-            string hashedPassword = Helpers.HashPassword(request.Password!);
+            var result = await _authService.Register(request);
 
-            _context.Users.Add(new User
+            if (result == null)
             {
-                Name = request.Name,
-                Password = hashedPassword,
-                Email = request.Email
-            });
+                return Conflict(new { message = "User already exists" });
+            }
 
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction(nameof(Register), new { email = request.Email }, request);
+            return CreatedAtAction(nameof(Register), new { email = result }, request);
         }
         catch (Exception)
         {
             return StatusCode(StatusCodes.Status500InternalServerError);
         }
+    }
+
+    [HttpPost("refresh-token")]
+    public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
+    {
+        if (request is null || string.IsNullOrEmpty(request.AccessToken) || string.IsNullOrEmpty(request.RefreshToken))
+        {
+            return BadRequest("Invalid client request");
+        }
+
+        var result = await _authService.RefreshToken(request.AccessToken, request.RefreshToken);
+
+        if (result == null)
+        {
+            return BadRequest("Invalid token");
+        }
+
+        return Ok(new LoginResponse { Token = result.Value.Token, RefreshToken = result.Value.RefreshToken });
     }
 }
 
@@ -95,6 +90,7 @@ public class LoginRequest
 public class LoginResponse
 {
     public string? Token { get; set; }
+    public string? RefreshToken { get; set; }
 }
 
 public class RegisterRequest
@@ -110,4 +106,10 @@ public class RegisterRequest
     [Required]
     [EmailAddress]
     public string? Email { get; set; }
+}
+
+public class RefreshTokenRequest
+{
+    public string? AccessToken { get; set; }
+    public string? RefreshToken { get; set; }
 }
